@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101827">
+  <title>DaniCam</title>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    *{box-sizing:border-box} body{margin:0;background:#101827;color:#f8fafc;font-family:Tahoma,Arial,sans-serif}
+    main{max-width:760px;margin:auto;padding:22px 16px 40px}
+    h1{margin:4px 0 8px;font-size:30px} .sub{color:#cbd5e1;line-height:1.9}
+    .card{background:#1e293b;border:1px solid #334155;border-radius:18px;padding:16px;margin:16px 0}
+    label{display:block;margin:12px 0 7px;color:#e2e8f0}
+    input{width:100%;padding:13px;border-radius:10px;border:1px solid #64748b;background:#0f172a;color:white;font-size:16px}
+    button{border:0;border-radius:11px;padding:13px 16px;font-size:15px;font-weight:bold;cursor:pointer;margin:7px 4px 4px 0;background:#38bdf8;color:#082f49}
+    button.secondary{background:#475569;color:white} button.danger{background:#f87171;color:#450a0a}
+    button:disabled{opacity:.45;cursor:not-allowed}
+    video{width:100%;max-height:420px;background:#020617;border-radius:14px;object-fit:contain}
+    .row{display:flex;gap:8px;flex-wrap:wrap}.row button{flex:1}
+    .status{padding:11px;border-radius:10px;background:#0f172a;color:#bae6fd;line-height:1.8;word-break:break-word}
+    .hint{font-size:13px;color:#cbd5e1;line-height:1.9}
+    .id{font-size:20px;font-weight:bold;letter-spacing:1px;direction:ltr;text-align:center}
+  </style>
+</head>
+<body>
+<main>
+  <h1>📷 DaniCam</h1>
+  <div class="sub">پخش زنده دوربین بین دو گوشی، فقط با اجازه صاحب گوشی فرستنده.</div>
+
+  <section class="card">
+    <h2>۱) گوشی فرستنده</h2>
+    <p class="hint">روی گوشی‌ای که قرار است تصویر دوربین جلوی آن دیده شود، این بخش را اجرا کن. مرورگر قبل از فعال‌کردن دوربین اجازه می‌گیرد.</p>
+    <button id="start">فعال‌کردن دوربین جلو</button>
+    <div style="margin-top:12px"><video id="local" autoplay playsinline muted></video></div>
+    <label>کد اتصال این گوشی</label>
+    <div class="status id" id="myid">هنوز ساخته نشده</div>
+    <button id="copy" class="secondary" disabled>کپی کد اتصال</button>
+    <div id="incoming" class="status" style="display:none;margin-top:12px">درخواست اتصال دریافت شد.</div>
+    <button id="accept" style="display:none">پذیرفتن اتصال</button>
+    <button id="reject" class="danger" style="display:none">رد اتصال</button>
+  </section>
+
+  <section class="card">
+    <h2>۲) گوشی بیننده</h2>
+    <p class="hint">کدی را که روی گوشی فرستنده نمایش داده شده وارد کن و درخواست اتصال بفرست.</p>
+    <label for="remoteid">کد گوشی فرستنده</label>
+    <input id="remoteid" placeholder="کد اتصال را وارد کن" autocomplete="off">
+    <button id="call">درخواست مشاهده تصویر</button>
+    <div style="margin-top:12px"><video id="remote" autoplay playsinline controls></video></div>
+  </section>
+
+  <section class="card">
+    <div class="status" id="status">وضعیت: آماده</div>
+    <div class="row">
+      <button id="stop" class="danger">قطع اتصال و خاموش‌کردن دوربین</button>
+    </div>
+    <p class="hint">برای امنیت، کد اتصال را فقط با فرد مورداعتماد به اشتراک بگذار. تصویر فقط پس از روشن‌کردن دوربین و پذیرفتن درخواست روی گوشی فرستنده منتقل می‌شود. این صفحه امکان دسترسی مخفیانه به گوشی یا برنامه‌های آن را ندارد.</p>
+  </section>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let peer = null, stream = null, pendingCall = null, activeCall = null;
+  const status = msg => $('status').textContent = 'وضعیت: ' + msg;
+
+  function createPeer() {
+    if (peer && !peer.destroyed) return;
+    peer = new Peer(undefined, {debug: 1});
+    peer.on('open', id => {
+      $('myid').textContent = id;
+      $('copy').disabled = false;
+      status('آماده اتصال؛ کد بالا را به گوشی بیننده بده');
+    });
+    peer.on('call', call => {
+      pendingCall = call;
+      $('incoming').style.display = 'block';
+      $('accept').style.display = 'inline-block';
+      $('reject').style.display = 'inline-block';
+      status('درخواست اتصال آمده؛ روی «پذیرفتن اتصال» بزن');
+    });
+    peer.on('error', err => status('خطا: ' + (err.type || err.message)));
+    peer.on('disconnected', () => status('ارتباط با سرویس اتصال قطع شد؛ صفحه را تازه‌سازی کن'));
+  }
+
+  $('start').onclick = async () => {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false, video: { facingMode: 'user' }
+      });
+      $('local').srcObject = stream;
+      createPeer();
+      status('دوربین روشن است؛ منتظر درخواست اتصال');
+    } catch (e) {
+      status('دسترسی دوربین انجام نشد: ' + e.message);
+    }
+  };
+
+  $('copy').onclick = async () => {
+    const id = $('myid').textContent;
+    try { await navigator.clipboard.writeText(id); status('کد اتصال کپی شد'); }
+    catch { status('کپی خودکار ممکن نیست؛ کد را دستی یادداشت کن'); }
+  };
+
+  $('accept').onclick = () => {
+    if (!pendingCall || !stream) return;
+    activeCall = pendingCall;
+    activeCall.answer(stream);
+    activeCall.on('close', () => { $('remote').srcObject = null; status('تماس پایان یافت'); });
+    activeCall.on('error', e => status('خطای تماس: ' + e.message));
+    $('incoming').style.display = $('accept').style.display = $('reject').style.display = 'none';
+    status('تصویر در حال ارسال است');
+    pendingCall = null;
+  };
+
+  $('reject').onclick = () => {
+    if (pendingCall) pendingCall.close();
+    pendingCall = null;
+    $('incoming').style.display = $('accept').style.display = $('reject').style.display = 'none';
+    status('درخواست رد شد');
+  };
+
+  $('call').onclick = () => {
+    const id = $('remoteid').value.trim();
+    if (!id) { status('ابتدا کد گوشی فرستنده را وارد کن'); return; }
+    if (!peer) createPeer();
+    const waitAndCall = () => {
+      if (!peer || !peer.open) { setTimeout(waitAndCall, 250); return; }
+      activeCall = peer.call(id, new MediaStream());
+      if (!activeCall) { status('ارسال درخواست ناموفق بود'); return; }
+      activeCall.on('stream', remoteStream => {
+        $('remote').srcObject = remoteStream;
+        status('تصویر زنده دریافت می‌شود');
+      });
+      activeCall.on('close', () => { $('remote').srcObject = null; status('تماس پایان یافت'); });
+      activeCall.on('error', e => status('خطای تماس: ' + e.message));
+      status('درخواست اتصال ارسال شد؛ منتظر تأیید گوشی فرستنده');
+    };
+    waitAndCall();
+  };
+
+  $('stop').onclick = () => {
+    if (pendingCall) pendingCall.close();
+    if (activeCall) activeCall.close();
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (peer) peer.destroy();
+    peer = stream = pendingCall = activeCall = null;
+    $('local').srcObject = null;
+    $('remote').srcObject = null;
+    $('myid').textContent = 'هنوز ساخته نشده';
+    $('copy').disabled = true;
+    $('incoming').style.display = $('accept').style.display = $('reject').style.display = 'none';
+    status('اتصال قطع شد و دوربین خاموش شد');
+  };
+})();
+</script>
+</body>
+</html>
